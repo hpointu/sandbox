@@ -7,7 +7,7 @@ SWITCH_THRESHOLD = 20
 FOOD_PORTION = 1
 
 
-def create_game(w, h):
+def create_world(w, h):
 
     def food(seed):
         return seed * 10
@@ -24,24 +24,24 @@ def center(c):
     return c * CELL_SIZE + CELL_SIZE // 2
 
 
-def cell_coords(game, i):
-    _, w, _ = game
+def cell_coords(world, i):
+    _, w, _ = world
     return center(i % w), center(i // w)
 
 
-def cell_index(game, x, y):
-    _, w, _ = game
+def cell_index(world, x, y):
+    _, w, _ = world
     col = x // CELL_SIZE
     row = y // CELL_SIZE
     return row * w + col
 
 
-def create_agent(game, i):
-    return cell_coords(game, i)
+def create_agent(world, i):
+    return cell_coords(world, i)
 
 
-def cell_neighbours(game, i):
-    grid, w, h = game
+def cell_neighbours(world, i):
+    grid, w, h = world
     c = i % w
 
     def neigh(p):
@@ -55,11 +55,11 @@ def cell_neighbours(game, i):
     ]
 
 
-def find_target(game, agent, switch_threshold=SWITCH_THRESHOLD):
+def find_target(world, agent, switch_threshold=SWITCH_THRESHOLD):
     """ Scan agent surroundings for more food """
-    grid, _, _ = game
-    i = cell_index(game, *agent)
-    neighs = cell_neighbours(game, i)
+    grid, _, _ = world
+    i = cell_index(world, *agent)
+    neighs = cell_neighbours(world, i)
     food = grid[i]
     mod = switch_threshold if food else 0
     surrounding = [(k, grid[k] - mod) for k in neighs]
@@ -67,9 +67,9 @@ def find_target(game, agent, switch_threshold=SWITCH_THRESHOLD):
                key=lambda s: s[1])
 
 
-def move_agent(game, agent, target, speed=1):
+def move_agent(world, agent, target, speed=1):
     x, y = agent
-    tx, ty = cell_coords(game, target)
+    tx, ty = cell_coords(world, target)
 
     if (x, y) == (tx, ty):
         return agent, False
@@ -80,39 +80,39 @@ def move_agent(game, agent, target, speed=1):
     return (x + dx, y + dy), True
 
 
-def eat(game, agent, portion=FOOD_PORTION):
-    grid, w, h = game
-    i = cell_index(game, *agent)
+def eat(world, agent, portion=FOOD_PORTION):
+    grid, w, h = world
+    i = cell_index(world, *agent)
     grid[i] -= portion
     return grid, w, h
 
 
-def draw_agent(game, a):
+def draw_agent(world, a):
     x, y = a
-    cell = cell_index(game, x, y)
+    cell = cell_index(world, x, y)
     print("Pos: {:0>2},{:0>2}".format(x, y))
     print("cell: {}".format(cell))
 
 
-def draw_game(game):
-    grid, w, h = game
+def draw_world(world):
+    grid, w, h = world
     rows = (' '.join("{:0>2}".format(c)
                      for c in grid[i*w:i*w+w])
             for i in range(h))
     print('\n'.join(rows))
 
 
-def render(game, agent, target):
+def render(world, agent, target):
     print("---")
-    draw_agent(game, agent)
-    print("Moving to: {}".format(cell_coords(game, target[0])))
+    draw_agent(world, agent)
+    print("Moving to: {}".format(cell_coords(world, target[0])))
     print()
-    draw_game(game)
+    draw_world(world)
     print()
 
 
 if __name__ == "__main__":
-    g = create_game(10, 10)
+    g = create_world(10, 10)
     a = create_agent(g, random.randrange(0, 100))
     while True:
         target = find_target(g, a)
