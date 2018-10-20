@@ -10,7 +10,7 @@ def test_neighbours():
     assert ga.cell_neighbours(g, 7) == [1, 2, 3, 6, 8, 11, 12, 13]
 
 
-def test_cell_at():
+def test_cell_index():
     g = ga.create_game(5, 5)
-    assert ga.cell_at(g, 0, 0) == 0
-    assert ga.cell_at(g, 22, 16) == 7
+    assert ga.cell_index(g, 0, 0) == 0
+    assert ga.cell_index(g, 22, 16) == 7
