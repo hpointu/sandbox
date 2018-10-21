@@ -1,6 +1,7 @@
 import math
 import random
 import time
+from typing import NamedTuple, List, Tuple, Union, Optional
 
 
 CELL_SIZE = 40  # simulate walking distance
@@ -8,7 +9,25 @@ SWITCH_THRESHOLD = 20
 FOOD_PORTION = 1
 
 
-def create_world(w, h):
+T = Union[int, float]
+Coords = Tuple[T, T]
+Food = int
+Grid = List[Food]
+
+
+class World(NamedTuple):
+    grid: Grid
+    width: int
+    height: int
+
+
+class Agent(NamedTuple):
+    pos: Coords
+    target: Optional[Coords]
+    speed: float
+
+
+def create_world(w, h) -> World:
 
     def food(seed):
         return seed * 10
@@ -18,32 +37,33 @@ def create_world(w, h):
         for i in range(w * h)
     ]
 
-    return grid, w, h
+    return World(grid, w, h)
 
 
-def center(c):
+def center(c: int) -> int:
     return c * CELL_SIZE + CELL_SIZE // 2
 
 
-def cell_coords(world, i):
-    _, w, _ = world
+def cell_coords(world: World, i: int) -> Coords:
+    w = world.width
     return center(i % w), center(i // w)
 
 
-def cell_index(world, x, y):
-    _, w, _ = world
+def cell_index(world: World, c: Coords) -> int:
+    x, y = c
+    w = world.width
     col = int(x) // CELL_SIZE
     row = int(y) // CELL_SIZE
     return row * w + col
 
 
-def create_agent(world, i):
+def create_agent(world: World, i: int) -> Agent:
     amp = 40
     speed_mod = random.randint(0, amp) - amp//2
-    return cell_coords(world, i), None, 1 + speed_mod/100
+    return Agent(cell_coords(world, i), None, 1 + speed_mod/100)
 
 
-def cell_neighbours(world, i):
+def cell_neighbours(world: World, i: int) -> List[int]:
     grid, w, h = world
     c = i % w
 
@@ -58,22 +78,23 @@ def cell_neighbours(world, i):
     ]
 
 
-def dist(p1, p2):
+def dist(p1: Coords, p2: Coords) -> float:
     (x1, y1), (x2, y2) = p1, p2
     return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
 
-def dist_from_target(agent):
+def dist_from_target(agent: Agent) -> float:
     pos, tgt, *_ = agent
     if not tgt:
         return 0
     return dist(pos, tgt)
 
 
-def find_target(world, agent, switch_threshold=SWITCH_THRESHOLD):
+def find_target(world: World, agent: Agent,
+                switch_threshold=SWITCH_THRESHOLD) -> Agent:
     """ Scan agent surroundings for more food """
     grid, _, _ = world
-    i = cell_index(world, *agent[0])
+    i = cell_index(world, agent.pos)
     neighs = cell_neighbours(world, i)
     food = grid[i]
     mod = switch_threshold if food > 0 else 0
@@ -83,31 +104,39 @@ def find_target(world, agent, switch_threshold=SWITCH_THRESHOLD):
         [(i, food)] + surrounding,
         key=lambda s: s[1]
     )
-    return agent[0], cell_coords(world, target[0]), agent[2]
+    return agent._replace(target=cell_coords(world, target[0]))
 
 
-def move_agent(world, agent):
-    (x, y), (tx, ty), speed = agent
-
-    if (x, y) == (tx, ty):
+def move_agent(world: World, agent: Agent) -> Agent:
+    if not agent.target:
         return agent
 
-    dx = speed if tx > x else -speed
-    dy = speed if ty > y else -speed
+    if agent.pos == agent.target:
+        return agent
 
-    return (x + dx, y + dy), (tx, ty), speed
+    x, y = agent.pos
+    tx, ty = agent.target
+    s = agent.speed
+
+    dx = s if tx > x else -s
+    dy = s if ty > y else -s
+
+    return agent._replace(pos=(x+dx, y+dy))
 
 
-def eat(world, agent, portion=FOOD_PORTION):
+def eat(world: World, agent: Agent,
+        portion=FOOD_PORTION) -> Tuple[World, Agent]:
+
     grid, w, h = world
-    i = cell_index(world, *agent[0])
+    i = cell_index(world, agent.pos)
+
     if grid[i]:
         grid[i] -= portion
-    return (grid, w, h), agent
+
+    return World(grid, w, h), agent
 
 
-def grow_food(world):
-    grid, w, h = world
+def grow_food(world: World) -> World:
 
     def grow(c):
         if c >= 50:
@@ -115,11 +144,11 @@ def grow_food(world):
         g = 0 if random.random() > 0.01 else 1
         return c + g
 
-    grid = [grow(c) for c in grid]
-    return grid, w, h
+    grid = [grow(c) for c in world.grid]
+    return world._replace(grid=grid)
 
 
-def step_agent(world, agent):
+def step_agent(world: World, agent: Agent) -> Tuple[World, Agent]:
     if dist_from_target(agent) > 1:
         agent = move_agent(world, agent)
     else:
@@ -128,23 +157,23 @@ def step_agent(world, agent):
     return world, agent
 
 
-def step_world(world):
+def step_world(world) -> World:
     return grow_food(world)
 
 
 # From here it's only to render the game in the terminal
 
-def draw_agent(world, a):
-    (x, y), target, _ = a
-    cell = cell_index(world, x, y)
+def draw_agent(world: World, a: Agent) -> None:
+    x, y = a.pos
+    cell = cell_index(world, a.pos)
     t = ""
-    if target:
-        t = "-> {}".format(target)
+    if a.target:
+        t = "-> {}".format(a.target)
     print("Pos: {:0>2},{:0>2} {}".format(int(x), int(y), t))
     print("cell: {}".format(cell))
 
 
-def draw_world(world):
+def draw_world(world: World) -> None:
     grid, w, h = world
     rows = (' '.join("{:0>2d}".format(c)
                      for c in grid[i*w:i*w+w])
@@ -152,7 +181,7 @@ def draw_world(world):
     print('\n'.join(rows))
 
 
-def render(world, agents):
+def render(world: World, agents: List[Agent]):
     print("---")
     for agent in agents:
         draw_agent(world, agent)
