@@ -25,6 +25,7 @@ class Agent(NamedTuple):
     pos: Coords
     target: Optional[Coords]
     speed: float
+    pv: int = 100
 
 
 def create_world(w, h) -> World:
@@ -130,10 +131,14 @@ def eat(world: World, agent: Agent,
     grid, w, h = world
     i = cell_index(world, agent.pos)
 
+    pv = agent.pv
     if grid[i]:
         grid[i] -= portion
+        pv += portion * 2
 
-    return World(grid, w, h), agent
+    pv = min(100, pv)
+
+    return World(grid, w, h), agent._replace(pv=pv)
 
 
 def grow_food(world: World) -> World:
@@ -149,12 +154,16 @@ def grow_food(world: World) -> World:
 
 
 def step_agent(world: World, agent: Agent) -> Tuple[World, Agent]:
-    if dist_from_target(agent) > 1:
+    if agent.pv < 1:
+        return world, agent
+
+    if dist_from_target(agent) > 2:
         agent = move_agent(world, agent)
     else:
         agent = find_target(world, agent)
     world, agent = eat(world, agent)
-    return world, agent
+    pv = max(agent.pv - 1, 0)
+    return world, agent._replace(pv=pv)
 
 
 def step_world(world) -> World:

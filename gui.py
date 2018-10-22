@@ -1,6 +1,7 @@
 import random
 import pyglet as pg
 import game as ga
+from game import Agent
 
 
 GREENS = [
@@ -38,8 +39,45 @@ def vertices(world):
 def target_lines(world, agents):
     return sum(
         [tuple(map(int, [x, y, *target]))
-         for (x, y), target, _ in agents
+         for (x, y), target, *_ in agents
          if target],
+        tuple()
+    )
+
+
+def agent_boxes(agents):
+    return sum(
+        [tuple(map(
+            int,
+            (x - 16, y - 22, x + 15, y - 22,
+             x + 15, y - 22, x + 15, y - 18,
+             x + 15, y - 18, x - 15, y - 18,
+             x - 15, y - 18, x - 16, y - 22)))
+            for (x, y), *_ in agents],
+        tuple()
+    )
+
+
+def agent_box_colors(agents):
+    def color(pv):
+        return (0, 0, 0) if pv > 0 else (255, 0, 0)
+
+    return sum([color(a.pv)*8 for a in agents],
+               tuple())
+
+
+def agent_pvs(agents):
+    def _pv(pv):
+        return 30 * (pv/100)
+
+    return sum(
+        [tuple(map(
+            int,
+            (x - 15, y - 22,
+             x - 15 + _pv(pv), y - 22,
+             x - 15 + _pv(pv), y - 18,
+             x - 15, y - 18)))
+            for (x, y), _, _, pv in agents],
         tuple()
     )
 
@@ -92,11 +130,24 @@ class WorldView(object):
             )
             for pos, *_ in agents
         ]
+
         lines = target_lines(world, agents)
         n = len(lines) // 2
         self.targets = pg.graphics.vertex_list(
             n, ("v2i", lines),
             ("c3B", (255, 0, 255) * n),
+        )
+
+        n = 4 * len(agents)
+        self.agentpvs = pg.graphics.vertex_list(
+            n, ("v2i", agent_pvs(agents)),
+            ("c3B", (0, 255, 0) * n),
+        )
+
+        n = 8 * len(agents)
+        self.agentboxes = pg.graphics.vertex_list(
+            n, ("v2i", agent_boxes(agents)),
+            ("c3B", agent_box_colors(agents)),
         )
 
     @property
@@ -113,6 +164,8 @@ class WorldView(object):
         pg.gl.glTranslatef(self.x, self.y, 0)
         pg.gl.glScalef(self.scale, self.scale, 1)
         self.world_batch.draw()
+        self.agentpvs.draw(pg.gl.GL_QUADS)
+        self.agentboxes.draw(pg.gl.GL_LINES)
         self.targets.draw(pg.gl.GL_LINES)
         pg.gl.glPopMatrix()
 
@@ -166,7 +219,7 @@ def start_game():
 
     load_resources()
     world = ga.create_world(WIDTH, HEIGHT)
-    agents = initialize_agents(world, 6)
+    agents = initialize_agents(world, 8)
 
     world_view = WorldView(window, world, agents, x=10, y=10)
 
