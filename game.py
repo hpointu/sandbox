@@ -1,11 +1,11 @@
 import math
 import random
 import time
+from enum import Enum
 from typing import NamedTuple, List, Tuple, Union, Optional
 
 
 CELL_SIZE = 40  # simulate walking distance
-SWITCH_THRESHOLD = 20
 FOOD_PORTION = 1
 
 
@@ -15,17 +15,33 @@ Food = int
 Grid = List[Food]
 
 
-class World(NamedTuple):
-    grid: Grid
-    width: int
-    height: int
+class Action(Enum):
+    SLEEPING = 0
+    MOVING = 1
+    EATING = 2
+
+
+class ADN(NamedTuple):
+    speed: float = 1.0
+    laziness: float = 0.4
+    sociability: float = 0.5
+    hungriness: int = 80
 
 
 class Agent(NamedTuple):
     pos: Coords
     target: Optional[Coords]
-    speed: float
-    pv: int = 100
+    adn: ADN
+    action: Action = Action.SLEEPING
+    pv: float = 100
+
+
+class World(NamedTuple):
+    grid: Grid
+    width: int
+    height: int
+    agents: List[Agent]
+    coords: List[Coords]
 
 
 def create_world(w, h) -> World:
@@ -38,7 +54,9 @@ def create_world(w, h) -> World:
         for i in range(w * h)
     ]
 
-    return World(grid, w, h)
+    wo = World(grid, w, h, [], [])
+    return wo._replace(coords=[cell_coords(wo, i)
+                               for i in range(w * h)])
 
 
 def center(c: int) -> int:
@@ -59,13 +77,23 @@ def cell_index(world: World, c: Coords) -> int:
 
 
 def create_agent(world: World, i: int) -> Agent:
-    amp = 40
-    speed_mod = random.randint(0, amp) - amp//2
-    return Agent(cell_coords(world, i), None, 1 + speed_mod/100)
+    def mitigate(v, percent=20):
+        r = 100 + random.randint(0, percent*2) - percent
+        return v * r / 100
+
+    adn = ADN()
+
+    adn._replace(
+        speed=mitigate(adn.speed),
+        laziness=mitigate(adn.laziness),
+        sociability=mitigate(adn.sociability),
+        hungriness=mitigate(adn.hungriness),
+    )
+    return Agent(world.coords[i], None, adn)
 
 
 def cell_neighbours(world: World, i: int) -> List[int]:
-    grid, w, h = world
+    grid, w, h, *_ = world
     c = i % w
 
     def neigh(p):
@@ -91,21 +119,30 @@ def dist_from_target(agent: Agent) -> float:
     return dist(pos, tgt)
 
 
-def find_target(world: World, agent: Agent,
-                switch_threshold=SWITCH_THRESHOLD) -> Agent:
+def find_target(world: World, agent: Agent) -> Coords:
     """ Scan agent surroundings for more food """
-    grid, _, _ = world
+    grid, *_ = world
+
+    def _interest(i):
+        occupied = bool([a for a in world.agents
+                         if cell_index(world, a.pos) == i])
+        social_factor = agent.adn.sociability if occupied else 1
+        distance = dist(agent.pos, world.coords[i])
+        return grid[i] * social_factor - distance * agent.adn.laziness
+
     i = cell_index(world, agent.pos)
-    neighs = cell_neighbours(world, i)
     food = grid[i]
-    mod = switch_threshold if food > 0 else 0
-    surrounding = [(k, grid[k] - mod) for k in neighs]
-    random.shuffle(surrounding)
-    target = max(
-        [(i, food)] + surrounding,
-        key=lambda s: s[1]
-    )
-    return agent._replace(target=cell_coords(world, target[0]))
+
+    neighs = cell_neighbours(world, i)
+    random.shuffle(neighs)
+
+    surroundings = [(world.coords[i], _interest(i))
+                    for i in neighs]
+
+    target = max([(world.coords[i], food), *surroundings],
+                 key=lambda s: s[1])
+
+    return target[0]
 
 
 def move_agent(world: World, agent: Agent) -> Agent:
@@ -117,7 +154,7 @@ def move_agent(world: World, agent: Agent) -> Agent:
 
     x, y = agent.pos
     tx, ty = agent.target
-    s = agent.speed
+    s = agent.adn.speed
 
     dx = s if tx > x else -s
     dy = s if ty > y else -s
@@ -128,17 +165,17 @@ def move_agent(world: World, agent: Agent) -> Agent:
 def eat(world: World, agent: Agent,
         portion=FOOD_PORTION) -> Tuple[World, Agent]:
 
-    grid, w, h = world
+    grid, w, h, *_ = world
     i = cell_index(world, agent.pos)
 
     pv = agent.pv
     if grid[i]:
         grid[i] -= portion
-        pv += portion * 2
+        pv += portion * 4
 
     pv = min(100, pv)
 
-    return World(grid, w, h), agent._replace(pv=pv)
+    return world._replace(grid=grid), agent._replace(pv=pv)
 
 
 def grow_food(world: World) -> World:
@@ -154,16 +191,36 @@ def grow_food(world: World) -> World:
 
 
 def step_agent(world: World, agent: Agent) -> Tuple[World, Agent]:
-    if agent.pv < 1:
+    if agent.pv < 1:  # Deads don't eat or move
         return world, agent
 
-    if dist_from_target(agent) > 2:
+    action = agent.action
+    next_target = find_target(world, agent)
+
+    if action == Action.MOVING:
         agent = move_agent(world, agent)
-    else:
-        agent = find_target(world, agent)
-    world, agent = eat(world, agent)
-    pv = max(agent.pv - 1, 0)
-    return world, agent._replace(pv=pv)
+        if dist_from_target(agent) <= 2:
+            agent = agent._replace(action=Action.EATING,
+                                   target=next_target)
+        else:
+            agent = agent._replace(target=next_target)
+
+    elif action == Action.EATING:
+        if agent.pv >= 100 or next_target != agent.target:
+            agent = agent._replace(action=Action.SLEEPING)
+        else:
+            world, agent = eat(world, agent)
+
+    if action == Action.SLEEPING:
+        if agent.pv < agent.adn.hungriness:
+            agent = agent._replace(action=Action.MOVING,
+                                   target=next_target)
+
+    tireness = 0.3 if action == Action.SLEEPING else 1
+
+    pv = max(agent.pv - tireness, 0)
+    agent = agent._replace(pv=pv)
+    return world, agent
 
 
 def step_world(world) -> World:
@@ -183,7 +240,7 @@ def draw_agent(world: World, a: Agent) -> None:
 
 
 def draw_world(world: World) -> None:
-    grid, w, h = world
+    grid, w, h, *_ = world
     rows = (' '.join("{:0>2d}".format(c)
                      for c in grid[i*w:i*w+w])
             for i in range(h))
@@ -201,8 +258,12 @@ def render(world: World, agents: List[Agent]):
 
 if __name__ == "__main__":
     world = create_world(10, 10)
+
     agents = [create_agent(world, random.randrange(0, 100)),
               create_agent(world, random.randrange(0, 100))]
+
+    world._replace(agents=agents)
+
     while True:
         world = step_world(world)
         for i, a in enumerate(agents):

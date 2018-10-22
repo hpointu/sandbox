@@ -1,6 +1,7 @@
 import random
 import pyglet as pg
 import game as ga
+from game import World, Agent
 
 
 GREENS = [
@@ -21,8 +22,8 @@ class Sprite(pg.sprite.Sprite):
     pass
 
 
-def vertices(world):
-    grid, w, h = world
+def vertices(world: World):
+    grid, w, h, *_ = world
     k = ga.CELL_SIZE
 
     return sum([
@@ -35,10 +36,10 @@ def vertices(world):
     ], tuple())
 
 
-def target_lines(world, agents):
+def target_lines(world: World):
     return sum(
         [tuple(map(int, [x, y, *target]))
-         for (x, y), target, *_ in agents
+         for (x, y), target, *_ in world.agents
          if target],
         tuple()
     )
@@ -59,7 +60,7 @@ def agent_boxes(agents):
 
 def agent_box_colors(agents):
     def color(pv):
-        return (0, 0, 0) if pv > 0 else (255, 0, 0)
+        return (0, 0, 0) if int(pv) > 0 else (255, 0, 0)
 
     return sum([color(a.pv)*8 for a in agents],
                tuple())
@@ -76,7 +77,7 @@ def agent_pvs(agents):
              x - 15 + _pv(pv), y - 22,
              x - 15 + _pv(pv), y - 18,
              x - 15, y - 18)))
-            for (x, y), _, _, pv in agents],
+            for (x, y), _, _, _, pv in agents],
         tuple()
     )
 
@@ -94,7 +95,7 @@ def map_colors(world):
 
 class WorldView(object):
     """ GL rendering of the world map """
-    def __init__(self, window, world, agents,
+    def __init__(self, window, world,
                  x=0, y=0, scale=1):
         self._x = x
         self._y = y
@@ -106,7 +107,7 @@ class WorldView(object):
         self.world_batch = pg.graphics.Batch()
         colors = map_colors(world)
         self._build(verts, colors)
-        self.update_agents(world, agents)
+        self.update_agents(world)
 
     def _build(self, verts, colors):
         n = len(verts) // 2
@@ -119,7 +120,7 @@ class WorldView(object):
     def update_food(self, world):
         self.verts.colors = map_colors(world)
 
-    def update_agents(self, world, agents):
+    def update_agents(self, world):
         self.agents = [
             Sprite(
                 RES['creature.png'],
@@ -127,26 +128,26 @@ class WorldView(object):
                 batch=self.world_batch,
                 group=self.foreground,
             )
-            for pos, *_ in agents
+            for pos, *_ in world.agents
         ]
 
-        lines = target_lines(world, agents)
+        lines = target_lines(world)
         n = len(lines) // 2
         self.targets = pg.graphics.vertex_list(
             n, ("v2i", lines),
             ("c3B", (255, 0, 255) * n),
         )
 
-        n = 4 * len(agents)
+        n = 4 * len(world.agents)
         self.agentpvs = pg.graphics.vertex_list(
-            n, ("v2i", agent_pvs(agents)),
+            n, ("v2i", agent_pvs(world.agents)),
             ("c3B", (0, 255, 0) * n),
         )
 
-        n = 8 * len(agents)
+        n = 8 * len(world.agents)
         self.agentboxes = pg.graphics.vertex_list(
-            n, ("v2i", agent_boxes(agents)),
-            ("c3B", agent_box_colors(agents)),
+            n, ("v2i", agent_boxes(world.agents)),
+            ("c3B", agent_box_colors(world.agents)),
         )
 
     @property
@@ -169,7 +170,7 @@ class WorldView(object):
         pg.gl.glPopMatrix()
 
 
-def initialize_agents(world, number):
+def initialize_agents(world: World, number):
     grid, *_ = world
     size = len(grid)
     return [
@@ -188,21 +189,21 @@ def load_resources():
         RES[r] = res
 
 
-def step_game(view, world, agents):
+def step_game(view, world: World):
 
     world = world
-    agents = agents
 
     def _handler(dt):
         nonlocal world
-        nonlocal agents
 
         world = ga.step_world(world)
-        for i, a in enumerate(agents):
-            world, agents[i] = ga.step_agent(world, agents[i])
+        agents = world.agents
+        for i, a in enumerate(world.agents):
+            world, agents[i] = ga.step_agent(world, world.agents[i])
+        world._replace(agents=agents)
 
         view.update_food(world)
-        view.update_agents(world, agents)
+        view.update_agents(world)
 
     return _handler
 
@@ -212,17 +213,17 @@ def start_game():
     pg.gl.glTexParameteri(pg.gl.GL_TEXTURE_2D,
                           pg.gl.GL_TEXTURE_MAG_FILTER,
                           pg.gl.GL_NEAREST)
-    WIDTH, HEIGHT = 10, 10
 
     window = pg.window.Window()
 
     load_resources()
-    world = ga.create_world(WIDTH, HEIGHT)
-    agents = initialize_agents(world, 8)
+    world = ga.create_world(10, 10)
+    agents = initialize_agents(world, 10)
+    world = world._replace(agents=agents)
 
-    world_view = WorldView(window, world, agents, x=10, y=10)
+    world_view = WorldView(window, world, x=10, y=10)
 
-    pg.clock.schedule(step_game(world_view, world, agents))
+    pg.clock.schedule(step_game(world_view, world))
 
     @window.event()
     def on_draw():
