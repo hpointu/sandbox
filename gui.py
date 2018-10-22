@@ -1,7 +1,6 @@
 import random
 import pyglet as pg
 import game as ga
-from game import Agent
 
 
 GREENS = [
